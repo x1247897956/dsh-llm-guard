@@ -8,25 +8,34 @@ from .detectors import (
     JailbreakDetector,
     PromptInjectionDetector,
     SensitiveDataDetector,
+    SemanticDetector,
 )
 from .detectors.base import ScanResult
 
 
 class Scanner:
     def __init__(self) -> None:
-        self.detectors = [
+        self.rule_detectors = [
             PromptInjectionDetector(),
             JailbreakDetector(),
             SensitiveDataDetector(),
         ]
+        self.semantic_detector = SemanticDetector()
 
     def scan(self, text: str) -> ScanResult:
         result = ScanResult(input=text, risky=False)
 
-        for detector in self.detectors:
+        for detector in self.rule_detectors:
             detection = detector.detect(text)
             if detection.is_risky:
                 result.risky = True
             result.detections.append(detection)
+
+        # 语义检测：仅识别注入/越狱两类（规则可能漏的变形攻击）
+        semantic = self.semantic_detector.detect(text)
+        if semantic is not None:
+            if semantic.is_risky:
+                result.risky = True
+            result.detections.append(semantic)
 
         return result

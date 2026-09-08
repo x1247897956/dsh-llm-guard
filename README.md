@@ -38,7 +38,7 @@ dsh-llm-guard/
 └── README.md
 ```
 
-## 检测能力（规则基线版）
+## 检测能力（规则 + 语义双层）
 
 | 风险类型 | 检测内容 |
 |---------|---------|
@@ -46,7 +46,29 @@ dsh-llm-guard/
 | jailbreak | 越狱绕过（DAN、开发者模式、无视限制等） |
 | sensitive_data | 敏感数据外泄（API key、JWT、手机号、身份证、邮箱、私钥等） |
 
-> 说明：当前为纯规则基线版，LLM 语义检测层已预留挂载点（见 `service/scanner.py`），后续可接入 LangChain + 模型 API 做变形攻击识别。
+检测分两层：
+
+1. **规则层**：正则 + 关键词，确定性、零延迟，覆盖标准攻击形式。
+2. **语义层**（LangChain + DeepSeek）：识别规则覆盖不到的变形攻击（间接泄露、角色扮演越狱、心理暗示越狱、藏头诗等）。
+
+语义层通过 `DEEPSEEK_API_KEY` 环境变量启用（存于 `service/.env`，已 gitignore）。未配置时自动降级为纯规则版。
+
+## 评测结果
+
+在 25 条恶意样本 + 20 条正常样本上：
+
+| 指标 | 值 |
+|------|-----|
+| 检出率 (Recall) | 100% |
+| 精确率 (Precision) | 100% |
+| 误报率 (FPR) | 0% |
+| F1 | 1.000 |
+
+运行评测：
+
+```bash
+uv run --with fastapi --with pydantic --with langchain-openai --with python-dotenv python service/evaluate.py
+```
 
 ## 运行 Python 服务
 

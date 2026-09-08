@@ -11,9 +11,11 @@
 from .prompt_injection import PromptInjectionDetector
 from .jailbreak import JailbreakDetector
 from .sensitive_data import SensitiveDataDetector
+from .semantic import SemanticDetector
 
 __all__ = [
     "PromptInjectionDetector",
     "JailbreakDetector",
     "SensitiveDataDetector",
+    "SemanticDetector",
 ]
