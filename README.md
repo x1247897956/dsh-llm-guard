@@ -27,10 +27,11 @@ dsh-llm-guard/
 ├── service/               # Python 检测服务
 │   ├── main.py            # FastAPI /scan 接口
 │   ├── scanner.py         # 汇总扫描引擎
-│   ├── detectors/         # 三个规则检测器
+│   ├── detectors/         # 规则检测器 + 语义检测器
 │   │   ├── prompt_injection.py
 │   │   ├── jailbreak.py
-│   │   └── sensitive_data.py
+│   │   ├── sensitive_data.py
+│   │   └── semantic.py
 │   ├── tests/             # 单元测试
 │   └── requirements.txt
 ├── plugin/
@@ -52,23 +53,6 @@ dsh-llm-guard/
 2. **语义层**（LangChain + DeepSeek）：识别规则覆盖不到的变形攻击（间接泄露、角色扮演越狱、心理暗示越狱、藏头诗等）。
 
 语义层通过 `DEEPSEEK_API_KEY` 环境变量启用（存于 `service/.env`，已 gitignore）。未配置时自动降级为纯规则版。
-
-## 评测结果
-
-在 25 条恶意样本 + 20 条正常样本上：
-
-| 指标 | 值 |
-|------|-----|
-| 检出率 (Recall) | 100% |
-| 精确率 (Precision) | 100% |
-| 误报率 (FPR) | 0% |
-| F1 | 1.000 |
-
-运行评测：
-
-```bash
-uv run --with fastapi --with pydantic --with langchain-openai --with python-dotenv python service/evaluate.py
-```
 
 ## 运行 Python 服务
 
@@ -107,6 +91,11 @@ uv run --with pytest --with fastapi --with pydantic pytest service/tests/ -q
 
 3. 重启 DSH host，新会话中模型即可调用 `llm_guard_scan` 工具。
 
-## LLM 语义层扩展（后续）
+## 已知限制
 
-在 `service/scanner.py` 中新增一个 `SemanticDetector`，用 LangChain 调模型做分类，补齐规则覆盖不到的变形注入/越狱。需要设置 `DEEPSEEK_API_KEY`。
+- 规则层为**确定性匹配**，对变形注入与语义改写不敏感，覆盖面由规则集决定；
+- 语义层依赖 `DEEPSEEK_API_KEY`，未配置时**自动降级为纯规则版**（有意的可用性设计，不是缺陷）；
+- 检测对象是**单条文本**，不做多轮会话级的累积判定；
+- **不提供效果数字**：本项目声明的是检测覆盖面与设计取舍，量化结论需在自有数据上自行测量；
+- 未做：模型微调、批量离线接口、多语言支持。
+
