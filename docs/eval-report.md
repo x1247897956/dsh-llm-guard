@@ -228,12 +228,19 @@ make gate          # 与 eval/baseline.json 比对
 - `eval/baseline.json` 声明了 `rules` 与 `rules+semantic` 两档的**下限**阈值
   （取实测值向下约 0.03 的安全边界；阈值是"不许掉到这里以下"，不是目标值），
   另加 `tolerance=0.02` 吸收语义层非确定性、`max_semantic_failure_rate=0.2` 拦"语义层挂了"。
-- **门禁真实拦截过一次**：把 `rules+semantic.recall` 阈值临时抬到 `0.95`（实测 0.7470），
-  `make gate` 以非 0 退出码拦下：
-  [原文日志](results/gate-blocked-20260927.log)（`FAIL recall: 实际 0.7470 >= 阈值 0.95`）。
-  恢复真实基线后 `make gate` 通过。
-- CI 里还有一个 `gate-blocks-on-regression` job 会重复一次同样的自证（该 job 被设计为失败），
-  使拦截在 Actions 历史里可查、可截图。
+- **门禁真实拦截过两次**（一次本地、一次在 CI 上）：
+  1. **本地**：把 `rules+semantic.recall` 阈值临时抬到 `0.95`（实测 0.7470），
+     `make gate` 以非 0 退出码拦下。原文日志：
+     [`results/gate-blocked-20260927.log`](results/gate-blocked-20260927.log)
+     （`FAIL recall: 实际 0.7470 >= 阈值 0.95`）。恢复真实基线后 `make gate` 通过。
+  2. **CI**：`.github/workflows/eval.yml` 的 `gate-blocks-on-regression` job 在
+     GitHub Actions 上重复同样的反向自证，该 job **被设计为失败**，失败即证据。
+     运行记录（run 36307221488，job「门禁拦截自证（阈值 0.95，预期失败）」）：
+     <https://github.com/x1247897956/dsh-llm-guard/actions/runs/36307221488>
+     → 同一 run 里的发布 job「make eval + 指标门禁」**通过**（对真实基线），
+     仅自证 job 失败。CI 日志原文：
+     `FAIL recall: 实际 0.7470 >= 阈值 0.95 (tolerance 0.02)` →
+     `门禁未通过，拦截本次变更` → `gate 退出码 = 1`。
 
 ## 9. 已知偏差与限制
 

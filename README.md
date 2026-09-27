@@ -154,5 +154,14 @@ make plugin-check               # DSH 插件契约静态校验
 - `ci.yml`：pytest 与插件契约校验（不注入 API key，验证降级路径）。
 - `eval.yml`：用真实数据跑评测并比对 `eval/baseline.json`，指标掉线即失败；
   另有一个反向自证 job，把阈值临时抬高以证明门禁确实会拦。
-- 门禁**真实拦截过一次**，原始输出留在
-  [`eval/results/gate-blocked-20260927.log`](eval/results/gate-blocked-20260927.log)。
+- 门禁**真实拦截过两次**（本地 + CI）：
+  - 本地原始输出：[`eval/results/gate-blocked-20260927.log`](eval/results/gate-blocked-20260927.log)（`FAIL recall: 实际 0.7470 >= 阈值 0.95`）
+  - CI 运行记录：[run 36307221488](https://github.com/x1247897956/dsh-llm-guard/actions/runs/36307221488)
+    —— 「make eval + 指标门禁」job 通过（对真实基线），
+    「门禁拦截自证」job 失败（阈值抬到 0.95，被拦下即证据）。
+- `ci.yml` 还抓出过一个真实缺陷：未配置 `DEEPSEEK_API_KEY` 时 `/health` 会 500
+  （降级路径自己崩掉）。已在 `3533e75` 修复并补了无 key 分支的单测。
+- ⚠️ `eval-gate` 这个 workflow 的**最新一次运行结论是 failure**，这是设计使然：
+  其中 `gate-blocks-on-regression` job 必须失败才能证明门禁有效。
+  判断代码是否健康请看 `ci` 这个 workflow（当前为绿）。这里刻意不放 CI 徽章，
+  就是因为徽章只会显示整体红色，反而误导。
