@@ -34,10 +34,18 @@ app = FastAPI(
 )
 scanner = Scanner()
 
-logger.info(
-    "LLM Guard 启动：语义层 enabled=%s，规则集 prompt_injection/jailbreak/sensitive_data",
-    scanner.semantic_enabled,
-)
+if scanner.semantic_enabled:
+    _client = scanner.semantic_client
+    logger.info(
+        "LLM Guard 启动：语义层 enabled=True base_url=%s model=%s（服务端实际模型以响应为准）",
+        _client.base_url,
+        _client.model,
+    )
+else:
+    logger.info(
+        "LLM Guard 启动：语义层 enabled=False，降级为纯规则版"
+        "（未配置 DEEPSEEK_API_KEY，/health 的 detectors.semantic_enabled 会同为 false）"
+    )
 
 
 class ScanRequest(BaseModel):
