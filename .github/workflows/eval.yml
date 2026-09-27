@@ -1,0 +1,118 @@
+name: eval-gate
+
+# 评测门禁：真实调用模型跑评测集，指标低于 eval/baseline.json 即失败。
+#
+# 为什么单独一个 workflow：指标会因为 prompt 改动、规则改动、模型侧行为漂移而掉线，
+# 这类回归靠单元测试抓不到——必须有一道"用真实数据拦住"的门。
+#
+# 需要在仓库 Secrets 里配置 DEEPSEEK_API_KEY；未配置时本 workflow 明确失败，
+# 而不是"跳过"，避免把没跑过的评测误当成通过。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "service/**"
+      - "eval/**"
+      - "Makefile"
+      - ".github/workflows/eval.yml"
+  pull_request:
+    paths:
+      - "service/**"
+      - "eval/**"
+  workflow_dispatch:
+
+jobs:
+  eval:
+    name: make eval + 指标门禁
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: 安装依赖
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python -r service/requirements.txt pytest
+
+      - name: 检查 API key 是否配置
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          if [ -z "$DEEPSEEK_API_KEY" ]; then
+            echo "::error::未配置 DEEPSEEK_API_KEY secret，评测无法运行（语义层会静默降级）。"
+            exit 1
+          fi
+
+      - name: 运行评测（规则层 vs 规则+语义层）
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: make eval
+
+      - name: 指标门禁（低于基线即失败）
+        run: make gate
+
+      - name: 归档评测结果
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: eval/results/
+          if-no-files-found: warn
+
+  gate-blocks-on-regression:
+    # 门禁的"反向自证"：把阈值临时抬到不可能达到的水平，证明门禁真的会拦。
+    # ⚠️ 这个 job 被设计为**失败**，失败即证据。阈值是临时构造的，不代表真实基线。
+    # 真实发布路径是上面的 eval job（对 eval/baseline.json 跑，且必须通过）。
+    name: 门禁拦截自证（阈值 0.95，预期失败）
+    needs: eval
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: 安装依赖
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python -r service/requirements.txt pytest
+
+      - name: 取回上一 job 的评测结果
+        if: needs.eval.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: eval-results
+          path: eval/results
+
+      - name: 用抬高后的阈值跑门禁（预期被拦下）
+        if: needs.eval.result == 'success'
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          b = json.loads(pathlib.Path("eval/baseline.json").read_text(encoding="utf-8"))
+          b["metrics"]["rules+semantic"]["recall"] = 0.95
+          pathlib.Path("/tmp/baseline-raised.json").write_text(
+              json.dumps(b, ensure_ascii=False, indent=2), encoding="utf-8"
+          )
+          print("已构造抬高阈值的基线：rules+semantic.recall = 0.95")
+          PY
+          set +e
+          .venv/bin/python -m eval.gate --results eval/results --baseline /tmp/baseline-raised.json
+          code=$?
+          echo "gate 退出码 = $code（非 0 = 门禁确实拦下了）"
+          if [ "$code" -eq 0 ]; then
+            echo "::error::门禁在抬高阈值后仍然通过，说明门禁失效"
+            exit 1
+          fi
+          echo "::notice::门禁自证通过：指标低于抬高后的阈值时被拦截（这是本 job 失败的原因）"
+          exit 1

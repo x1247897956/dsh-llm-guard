@@ -1,0 +1,19 @@
+{
+  "_comment": "评测门禁基线。阈值取各配置实测值向下取整的安全边界（比实测低约 0.03~0.05），用于拦截'指标掉线'而不是'逐位相等'；语义层非确定性由 tolerance 吸收。阈值是下界，不是目标值。",
+  "tolerance": 0.02,
+  "max_semantic_failure_rate": 0.2,
+  "metrics": {
+    "rules": {
+      "precision": 0.63,
+      "recall": 0.33,
+      "f1": 0.44,
+      "fpr": 0.26
+    },
+    "rules+semantic": {
+      "precision": 0.77,
+      "recall": 0.71,
+      "f1": 0.74,
+      "fpr": 0.26
+    }
+  }
+}

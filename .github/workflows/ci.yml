@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: pytest（规则层，不依赖模型 API）
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: 安装依赖
+        run: |
+          uv venv --python ${{ matrix.python-version }} .venv
+          uv pip install --python .venv/bin/python -r service/requirements.txt pytest
+
+      - name: 单元测试
+        # 刻意不注入 DEEPSEEK_API_KEY：CI 必须证明"未配置 key 时干净降级为纯规则版"
+        run: .venv/bin/python -m pytest service/tests -q
+
+      - name: 插件契约校验
+        run: .venv/bin/python -m eval.plugin_check
+
+      - name: 密钥泄漏自检
+        run: |
+          set -e
+          echo "检查仓库内是否出现疑似真实密钥（.env / sk- / AKIA / ghp_）"
+          # .env 不应存在（只允许 .env.example）
+          if git ls-files | grep -E '(^|/)\.env$'; then
+            echo "::error::仓库里跟踪了 .env"; exit 1
+          fi
+          # 排除测试与数据集里刻意使用的假凭据（sk-TESTONLY / AKIA...EXAMPLE / 全 a 占位）
+          if git grep -nE '(sk-[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{36,})' -- . \
+              | grep -vE 'TESTONLY|EXAMPLES|a{30}|test_|eval/dataset' ; then
+            echo "::error::疑似真实凭据"; exit 1
+          fi
+          echo "OK"

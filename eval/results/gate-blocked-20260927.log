@@ -1,0 +1,24 @@
+.venv/bin/python -m eval.gate --results eval/results --baseline eval/baseline.json
+== LLM Guard 评测门禁 ==
+结果文件：eval/results/report.json
+基线文件：eval/baseline.json（tolerance=0.02）
+数据集 sha256：251d1d16b3b721c1a2465e16149f8296e3f3e153c30c610dd4ba8eb623e7c572
+
+-- 模式 rules --
+  PASS precision: 实际 0.6667 >= 阈值 0.63 (tolerance 0.02)
+  PASS recall: 实际 0.3614 >= 阈值 0.33 (tolerance 0.02)
+  PASS f1: 实际 0.4687 >= 阈值 0.44 (tolerance 0.02)
+  PASS fpr: 实际 0.2027 <= 阈值 0.26 (tolerance 0.02)
+-- 模式 rules+semantic --
+  PASS precision: 实际 0.8052 >= 阈值 0.77 (tolerance 0.02)
+  FAIL recall: 实际 0.7470 >= 阈值 0.95 (tolerance 0.02)
+  PASS f1: 实际 0.7750 >= 阈值 0.74 (tolerance 0.02)
+  PASS fpr: 实际 0.2027 <= 阈值 0.26 (tolerance 0.02)
+-- 语义层可用性 (rules+semantic) --
+  PASS failure_rate: 0.0 <= 0.2（calls=157 failed=0）
+-- 语义层可用性 (rules+semantic+exfil) --
+  PASS failure_rate: 0.0 <= 0.2（calls=314 failed=0）
+
+门禁未通过，拦截本次变更：
+  - rules+semantic.recall 实际 0.7470，要求 >= 0.95（tolerance 0.02）
+make: *** [gate] Error 1
