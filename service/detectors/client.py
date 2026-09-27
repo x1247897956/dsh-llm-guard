@@ -56,6 +56,15 @@ class CallStats:
         }
 
 
+def empty_stats_dict() -> dict:
+    """未启用语义层时的统计占位（保证 ``/health`` 字段形状恒定）。
+
+    真实教训：这一条是被 CI 抓出来的——没配 key 时 ``semantic_client`` 是 ``None``，
+    于是 ``/health`` 取 ``.stats`` 直接 500。降级路径自己崩掉，比不降级更糟。
+    """
+    return CallStats().to_dict()
+
+
 class LLMClient:
     """极小的 OpenAI 兼容 chat/completions 客户端。"""
 

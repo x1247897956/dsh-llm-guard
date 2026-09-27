@@ -18,6 +18,7 @@ import logging
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from .detectors.client import empty_stats_dict
 from .scanner import MODES, Scanner
 
 logging.basicConfig(
@@ -51,17 +52,22 @@ class ScanResponse(BaseModel):
 
 @app.get("/health")
 def health() -> dict:
-    """健康检查：同时暴露语义层可用性，避免「静默降级」被误读成检测失败。"""
-    stats = scanner.semantic_client.stats
+    """健康检查：同时暴露语义层可用性，避免「静默降级」被误读成检测失败。
+
+    未启用语义层时 ``semantic_client`` 为 ``None``，这里退化为一份零值统计，
+    保证响应字段形状恒定（调用方不必写两套解析逻辑）。
+    """
+    client = scanner.semantic_client
     return {
         "status": "ok",
         "version": app.version,
         "detectors": {
             "rules": [d.RISK_TYPE for d in scanner.rule_detectors],
             "semantic_enabled": scanner.semantic_enabled,
-            "semantic_model": scanner.semantic_client.model if scanner.semantic_enabled else None,
+            "semantic_model": None if client is None else client.model,
+            "semantic_base_url": None if client is None else client.base_url,
         },
-        "semantic_stats": stats.to_dict(),
+        "semantic_stats": client.stats.to_dict() if client is not None else empty_stats_dict(),
     }
 
 
