@@ -1,16 +1,42 @@
 """LLM Guard 检测服务（FastAPI）。
 
-提供 POST /scan 接口，接收文本，返回统一风险报告。
-DSH 工具插件通过此接口桥接 Python/LangChain 检测核心。
+对外契约：
+- ``GET  /health``  健康检查 + 当前检测能力（规则层 / 语义层是否启用）
+- ``POST /scan``    单条文本检测，返回 ``{input, risky, detections}``
+
+``/scan`` 的字段保持 v1 原样（向后兼容），另外**新增可选**查询参数 ``mode``：
+
+- 省略 / ``rules+semantic``：规则层 + 语义层（默认行为，与 v1 等价）
+- ``rules``：只跑规则层（不产生模型调用，确定性、可离线）
+- ``semantic``：只跑语义层（用于消融对照）
 """
 
-from fastapi import FastAPI
+from __future__ import annotations
+
+import logging
+
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from .scanner import Scanner
+from .scanner import MODES, Scanner
 
-app = FastAPI(title="LLM Guard", version="0.1.0")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("llm_guard")
+
+app = FastAPI(
+    title="LLM Guard",
+    version="0.2.0",
+    description="LLM 应用输入侧安全检测：规则 + 语义双层护栏",
+)
 scanner = Scanner()
+
+logger.info(
+    "LLM Guard 启动：语义层 enabled=%s，规则集 prompt_injection/jailbreak/sensitive_data",
+    scanner.semantic_enabled,
+)
 
 
 class ScanRequest(BaseModel):
@@ -25,10 +51,29 @@ class ScanResponse(BaseModel):
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok"}
+    """健康检查：同时暴露语义层可用性，避免「静默降级」被误读成检测失败。"""
+    stats = scanner.semantic_client.stats
+    return {
+        "status": "ok",
+        "version": app.version,
+        "detectors": {
+            "rules": [d.RISK_TYPE for d in scanner.rule_detectors],
+            "semantic_enabled": scanner.semantic_enabled,
+            "semantic_model": scanner.semantic_client.model if scanner.semantic_enabled else None,
+        },
+        "semantic_stats": stats.to_dict(),
+    }
 
 
 @app.post("/scan", response_model=ScanResponse)
-def scan(req: ScanRequest) -> ScanResponse:
-    result = scanner.scan(req.text)
+def scan(
+    req: ScanRequest,
+    mode: str = Query(
+        default="rules+semantic",
+        description=f"检测模式，可选：{', '.join(MODES)}",
+    ),
+) -> ScanResponse:
+    if mode not in MODES:
+        raise HTTPException(status_code=400, detail=f"mode 必须是 {MODES} 之一")
+    result = scanner.scan(req.text, mode=mode)
     return ScanResponse(**result.to_dict())
