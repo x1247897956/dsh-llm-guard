@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dsh-llm-guard"
+version = "0.2.0"
+description = "LLM 应用安全检测服务：规则 + 语义双层，并封装为 DSH 工具插件"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "x1247897956" }]
+keywords = ["llm-security", "prompt-injection", "jailbreak", "guardrails", "deepseek-harness"]
+classifiers = [
+  "Programming Language :: Python :: 3.11",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Security",
+]
+
+# 运行时依赖：HTTP 层（规则版即可用）
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.29",
+  "pydantic>=2.6",
+  "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+# 语义层：直连 OpenAI 兼容 /chat/completions，仅需 httpx
+semantic = ["httpx>=0.27"]
+dev = ["pytest>=8.0", "httpx>=0.27"]
+
+[project.urls]
+Repository = "https://github.com/x1247897956/dsh-llm-guard"
+
+[project.scripts]
+llm-guard-service = "service.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["service"]
+
+[tool.pytest.ini_options]
+testpaths = ["service/tests"]
+addopts = "-q"
