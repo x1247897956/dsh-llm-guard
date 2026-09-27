@@ -1,8 +1,44 @@
-__pycache__/
-*.py[cod]
-.pytest_cache/
-*.egg-info/
+# ---- 内部材料：绝不进公开仓库 ----
+# 任务说明与会话上下文（含求职语境 / 简历口径）
+AGENT-TASK.md
+# 设计文档（内部材料）
+docs/design/
+
+# ---- 密钥与本地环境 ----
+.env
+.env.*
+!.env.example
+*.key
+*.pem
 .venv/
 venv/
-.env
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- 日志与临时产物 ----
+*.log
+logs/
+.scratch/
+
+# ---- 评测产物（可复现，不必入库） ----
+eval/results/*.json
+eval/results/*.md
+eval/results/*.csv
+eval/results/.checkpoint-*.jsonl
+eval/results/human_annotations.json
+!eval/results/.gitkeep
+# 例外：门禁真实拦截一次的原始日志（保留为证据，见 docs/eval-report.md §8）
+!eval/results/gate-blocked-*.log
+
+# ---- 编辑器 / 系统 ----
 .DS_Store
+.idea/
+.vscode/
+uv.lock
