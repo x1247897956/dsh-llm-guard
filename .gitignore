@@ -29,6 +29,7 @@ logs/
 
 # ---- 评测产物（可复现，不必入库） ----
 eval/results/*.json
+eval/results/*.jsonl
 eval/results/*.md
 eval/results/*.csv
 eval/results/.checkpoint-*.jsonl
