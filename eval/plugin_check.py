@@ -12,6 +12,8 @@
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -36,6 +38,15 @@ def main() -> int:
     if not PLUGIN.exists():
         print(f"FAIL: 插件文件不存在：{PLUGIN}")
         return 1
+
+    if not shutil.which("node"):
+        print("FAIL: Node.js 未安装，无法校验插件语法")
+        return 1
+    syntax = subprocess.run(["node", "--check", str(PLUGIN)], capture_output=True, text=True)
+    if syntax.returncode:
+        print(f"FAIL: 插件语法错误\n{syntax.stderr}")
+        return 1
+    print("PASS: Node.js 语法校验")
 
     source = PLUGIN.read_text(encoding="utf-8")
     failures: list[str] = []

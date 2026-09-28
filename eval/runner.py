@@ -82,6 +82,8 @@ class InProcessBackend:
 
         self.mode = mode
         self.scanner = Scanner()
+        if "semantic" in mode and not self.scanner.semantic_enabled:
+            raise SystemExit("语义评测需要 DEEPSEEK_API_KEY；服务可降级，但不能将无模型调用作为双层评测。")
 
     def scan(self, text: str) -> dict:
         result = self.scanner.scan(text, mode=self.mode)
@@ -297,6 +299,7 @@ def render_summary(meta: dict, results: dict[str, dict]) -> str:
 
         stats = res.get("semantic_stats") or {}
         if stats:
+            lines.append(f"- 模型：requested={stats.get('requested_model')} / reported={stats.get('reported_model')}")
             lines.append(
                 f"- 语义层调用：{stats.get('calls')} 次（成功 {stats.get('ok')} / 失败 {stats.get('failed')} / "
                 f"解析失败 {stats.get('parse_failed')}）；失败率 {stats.get('failure_rate')}；"
@@ -343,7 +346,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--mode",
         default="both",
-        choices=["rules", "rules+semantic", "semantic", "semantic+exfil", "both", "all"],
+        choices=["rules", "rules+semantic", "semantic", "semantic+exfil", "rules+semantic+exfil", "both", "all"],
         help="both = rules 与 rules+semantic；all = 再加上 semantic+exfil（默认 both）",
     )
     parser.add_argument("--backend", default="in-process", choices=["in-process", "http"])
@@ -351,6 +354,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--resume", action="store_true", help="复用 .checkpoint-<mode>.jsonl")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
+
+    if args.resume and args.mode != "rules":
+        raise SystemExit("语义评测暂不支持 resume：旧检查点缺少可核验的模型与调用统计，请重新完整运行。")
 
     if not args.dataset.exists():
         raise SystemExit(f"数据集不存在：{args.dataset}")
@@ -410,12 +416,8 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         # 防"静默降级"：语义层模式下若一次模型调用都没发生，指标不可能是真的
-        if mode == "rules+semantic" and not (results[mode].get("semantic_stats") or {}).get("calls"):
-            print(
-                "   !! 警告：rules+semantic 模式下语义层调用次数为 0——"
-                "很可能是 DEEPSEEK_API_KEY 未生效导致静默降级，指标不代表双层结果。",
-                file=sys.stderr,
-            )
+        if "semantic" in mode and not (results[mode].get("semantic_stats") or {}).get("calls"):
+            raise SystemExit("语义层调用次数为 0，拒绝生成双层评测结论。")
 
     report = {"meta": meta, "results": results}
     (args.out / "report.json").write_text(
