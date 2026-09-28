@@ -9,7 +9,7 @@
 #   make clean   清理缓存
 
 SHELL := /bin/bash
-PY := 3.12
+PY := 3.11
 UV := uv
 VENV := .venv
 SERVICE_DIR := service
@@ -29,9 +29,8 @@ help:
 	@grep -hE '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*## "}{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 setup: ## 安装依赖并生成 service/.env 模板
-	$(UV) venv --python $(PY) $(VENV)
-	$(UV) pip install --python $(VENV)/bin/python -r $(SERVICE_DIR)/requirements.txt
-	$(UV) pip install --python $(VENV)/bin/python pytest httpx
+	@test -x $(VENV)/bin/python || $(UV) venv --python $(PY) $(VENV)
+	$(UV) pip install --python $(VENV)/bin/python -e ".[semantic,dev]"
 	@test -f $(SERVICE_DIR)/.env || (cp .env.example $(SERVICE_DIR)/.env && echo "已生成 service/.env（语义层需填入 DEEPSEEK_API_KEY）")
 
 run: ## 启动 FastAPI 检测服务
