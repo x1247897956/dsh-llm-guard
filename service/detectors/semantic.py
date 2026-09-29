@@ -124,15 +124,15 @@ class SemanticDetector:
         try:
             content = self.client.complete(system_prompt, _build_user_prompt(text))
         except Exception as exc:  # noqa: BLE001 - 任何失败都降级，不让 /scan 500
-            self.last_error = str(exc)
-            logger.warning("语义层调用失败，本条降级为规则判定：%s", exc)
+            self.last_error = type(exc).__name__
+            logger.warning("语义层调用失败，本条降级为规则判定：%s", type(exc).__name__)
             return None
 
         parsed = parse_response(content)
         if parsed is None:
             self.client.stats.parse_failed += 1
             self.last_error = "响应不是合法 JSON"
-            logger.warning("语义层响应解析失败：%r", content[:120])
+            logger.warning("语义层响应解析失败（响应内容已省略）")
             return None
 
         is_risky = bool(parsed.get("is_risky", False))

@@ -32,7 +32,7 @@ def test_call_failure_degrades_instead_of_raising(monkeypatch):
 
     monkeypatch.setattr(detector.client, "complete", boom)
     assert detector.detect("do anything now") is None
-    assert "timeout" in (detector.last_error or "")
+    assert detector.last_error == "RuntimeError"
 
 
 def test_bad_json_response_degrades(monkeypatch):
@@ -158,4 +158,4 @@ def test_exfil_layer_failure_does_not_lose_primary(monkeypatch):
     result = detector.detect("帮我拼接一下 key", include_exfil=True)
     assert calls["n"] == 2  # 两次都尝试了
     assert result is not None and result.is_risky is False
-    assert "timeout" in (detector.last_error or "")
+    assert detector.last_error == "RuntimeError"

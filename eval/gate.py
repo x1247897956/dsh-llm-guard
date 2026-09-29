@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -31,7 +32,20 @@ def load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def probability(value: object) -> bool:
+    return (type(value) in (int, float) and math.isfinite(value)
+            and 0 <= value <= 1)
+
+
 def check(results_dir: Path, baseline_path: Path) -> int:
+    try:
+        return _check(results_dir, baseline_path)
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
+        print(f"FAIL: 无效的门禁输入：{exc}")
+        return 1
+
+
+def _check(results_dir: Path, baseline_path: Path) -> int:
     report_path = results_dir / "report.json"
     if not report_path.exists():
         print(f"FAIL: 找不到评测结果 {report_path}，请先运行 `make eval`")
@@ -42,7 +56,11 @@ def check(results_dir: Path, baseline_path: Path) -> int:
 
     report = load_json(report_path)
     baseline = load_json(baseline_path)
-    tolerance = float(baseline.get("tolerance", 0.0))
+    tolerance = baseline.get("tolerance", 0.0)
+    if not probability(tolerance):
+        raise ValueError("tolerance 必须是 0 到 1 的有限数")
+    if not baseline.get("metrics"):
+        raise ValueError("baseline.metrics 不得为空")
     results = report.get("results", {})
 
     print("== LLM Guard 评测门禁 ==")
@@ -51,6 +69,9 @@ def check(results_dir: Path, baseline_path: Path) -> int:
     print(f"数据集 sha256：{report['meta']['dataset']['sha256']}\n")
 
     failures: list[str] = []
+    expected_hash = baseline.get("dataset_sha256")
+    if expected_hash is not None and report["meta"]["dataset"]["sha256"] != expected_hash:
+        failures.append("数据集 sha256 与基线不一致")
     for mode, spec in baseline.get("metrics", {}).items():
         if mode not in results:
             failures.append(f"缺少模式 {mode} 的结果（baseline 要求，请用 --mode both 跑）")
@@ -58,12 +79,17 @@ def check(results_dir: Path, baseline_path: Path) -> int:
             continue
         actual = results[mode]["overall"]
         print(f"-- 模式 {mode} --")
+        if not spec:
+            failures.append(f"{mode} 的指标配置为空")
         for metric, threshold in spec.items():
-            direction = DIRECTION.get(metric, "min")
+            if metric not in DIRECTION or not probability(threshold):
+                failures.append(f"无效的指标配置 {mode}.{metric}: {threshold}")
+                continue
+            direction = DIRECTION[metric]
             value = actual.get(metric)
-            if value is None:
-                failures.append(f"{mode}.{metric} 为 null（分母为 0）")
-                print(f"  FAIL {metric}: null（分母为 0，不允许）")
+            if not probability(value):
+                failures.append(f"{mode}.{metric} 无效（必须是 0 到 1 的有限数）")
+                print(f"  FAIL {metric}: 无效数值 {value!r}")
                 continue
             if direction == "min":
                 ok = value >= float(threshold) - tolerance
@@ -79,20 +105,30 @@ def check(results_dir: Path, baseline_path: Path) -> int:
                 failures.append(f"{mode}.{metric} 实际 {value:.4f}，要求 {op} {threshold}（tolerance {tolerance}）")
 
     max_fail_rate = baseline.get("max_semantic_failure_rate")
-    if max_fail_rate is not None:
-        for mode, res in results.items():
-            stats = res.get("semantic_stats") or {}
-            if not stats.get("calls"):
-                continue
-            rate = stats.get("failure_rate", 0.0)
-            ok = rate <= float(max_fail_rate)
+    if max_fail_rate is not None and not probability(max_fail_rate):
+        raise ValueError("max_semantic_failure_rate 必须是 0 到 1 的有限数")
+    for mode, res in results.items():
+        if mode != "rules+semantic":
+            continue
+        stats = res.get("semantic_stats") or {}
+        calls, failed, parse_failed, rate = (stats.get(key) for key in ("calls", "failed", "parse_failed", "failure_rate"))
+        if (type(calls) is not int or calls <= 0 or type(failed) is not int
+                or type(parse_failed) is not int or min(failed, parse_failed) < 0
+                or failed > calls or parse_failed > calls or not probability(rate)):
+            failures.append(f"{mode} 语义调用统计无效：必须实际调用且计数、失败率合法")
+            continue
+        # The runner serializes the rate rounded to four decimal places.
+        actual_rate = (failed + parse_failed) / calls
+        if not math.isclose(rate, actual_rate, abs_tol=0.000051):
+            failures.append(f"{mode} failure_rate 与 failed/calls 不一致")
+            continue
+        if max_fail_rate is not None:
+            ok = actual_rate <= max_fail_rate
             print(f"-- 语义层可用性 ({mode}) --")
-            print(
-                f"  {'PASS' if ok else 'FAIL'} failure_rate: {rate} <= {max_fail_rate}"
-                f"（calls={stats.get('calls')} failed={stats.get('failed')}）"
-            )
+            print(f"  {'PASS' if ok else 'FAIL'} failure_rate: {actual_rate:.4f} "
+                  f"<= {max_fail_rate}（calls={calls} failed={failed}）")
             if not ok:
-                failures.append(f"{mode} 语义层失败率 {rate} > {max_fail_rate}")
+                failures.append(f"{mode} 语义层失败率 {actual_rate} > {max_fail_rate}")
 
     if failures:
         print("\n门禁未通过，拦截本次变更：")

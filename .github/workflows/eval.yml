@@ -67,9 +67,9 @@ jobs:
 
   gate-blocks-on-regression:
     # 门禁的"反向自证"：把阈值临时抬到不可能达到的水平，证明门禁真的会拦。
-    # ⚠️ 这个 job 被设计为**失败**，失败即证据。阈值是临时构造的，不代表真实基线。
+    # 用临时报告构造低于阈值的输入；门禁拦截后该自证 job 本身应成功。
     # 真实发布路径是上面的 eval job（对 eval/baseline.json 跑，且必须通过）。
-    name: 门禁拦截自证（阈值 0.95，预期失败）
+    name: 门禁拦截自证（合成低分输入，预期通过）
     needs: eval
     if: always()
     runs-on: ubuntu-latest
@@ -94,25 +94,29 @@ jobs:
           name: eval-results
           path: eval/results
 
-      - name: 用抬高后的阈值跑门禁（预期被拦下）
+      - name: 用合成低分报告验证门禁（预期拦截并通过自证）
         if: needs.eval.result == 'success'
         run: |
+          cp eval/results/report.json /tmp/report-original.json
+          trap 'cp /tmp/report-original.json eval/results/report.json' EXIT
           python - <<'PY'
           import json, pathlib
-          b = json.loads(pathlib.Path("eval/baseline.json").read_text(encoding="utf-8"))
-          b["metrics"]["rules+semantic"]["recall"] = 0.95
-          pathlib.Path("/tmp/baseline-raised.json").write_text(
-              json.dumps(b, ensure_ascii=False, indent=2), encoding="utf-8"
-          )
-          print("已构造抬高阈值的基线：rules+semantic.recall = 0.95")
+          p = pathlib.Path("eval/results/report.json")
+          r = json.loads(p.read_text())
+          r["results"]["rules+semantic"]["overall"]["recall"] = 0.0
+          p.write_text(json.dumps(r))
+          b = json.loads(pathlib.Path("eval/baseline.json").read_text())
+          b["tolerance"] = 0.0
+          b["metrics"] = {"rules+semantic": {"recall": 1.0}}
+          pathlib.Path("/tmp/baseline-raised.json").write_text(json.dumps(b))
           PY
           set +e
           .venv/bin/python -m eval.gate --results eval/results --baseline /tmp/baseline-raised.json
           code=$?
+          set -e
           echo "gate 退出码 = $code（非 0 = 门禁确实拦下了）"
           if [ "$code" -eq 0 ]; then
-            echo "::error::门禁在抬高阈值后仍然通过，说明门禁失效"
+            echo "::error::门禁对低分输入仍然通过"
             exit 1
           fi
-          echo "::notice::门禁自证通过：指标低于抬高后的阈值时被拦截（这是本 job 失败的原因）"
-          exit 1
+          echo "::notice::门禁自证通过：低于阈值的输入已被拦截"

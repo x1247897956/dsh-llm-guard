@@ -31,6 +31,8 @@ DEFAULT_MODEL = "deepseek-chat"
 class CallStats:
     """语义层调用统计——用于在评测报告里如实说明失败率。"""
 
+    requested_model: str | None = None
+    reported_model: str | None = None
     calls: int = 0
     ok: int = 0
     failed: int = 0
@@ -43,6 +45,8 @@ class CallStats:
     def to_dict(self) -> dict:
         lat = sorted(self.latencies_ms)
         return {
+            "requested_model": self.requested_model,
+            "reported_model": self.reported_model,
             "calls": self.calls,
             "ok": self.ok,
             "failed": self.failed,
@@ -81,7 +85,7 @@ class LLMClient:
         self.model = model or os.environ.get("LLM_GUARD_MODEL") or DEFAULT_MODEL
         self.timeout = float(timeout or os.environ.get("LLM_GUARD_TIMEOUT") or 30)
         self.retries = int(retries if retries is not None else os.environ.get("LLM_GUARD_RETRIES") or 2)
-        self.stats = CallStats()
+        self.stats = CallStats(requested_model=self.model)
         #: 服务端实际返回的 model 字段（可能与请求的 model 不同，报告里如实记录）
         self.reported_model: str | None = None
 
@@ -104,38 +108,52 @@ class LLMClient:
             "Content-Type": "application/json",
         }
 
-        last_err: Exception | None = None
+        last_error = "request failed"
         for attempt in range(self.retries + 1):
             started = time.monotonic()
             self.stats.calls += 1
+            retryable = True
+            last_error = "request failed"
             try:
                 resp = httpx.post(url, json=payload, headers=headers, timeout=self.timeout)
-                elapsed_ms = (time.monotonic() - started) * 1000
-                self.stats.latencies_ms.append(elapsed_ms)
-
-                if resp.status_code >= 500 or resp.status_code == 429:
-                    # 可重试的服务端/限流错误
-                    raise RuntimeError(f"HTTP {resp.status_code}: {resp.text[:200]}")
                 if resp.status_code >= 400:
-                    # 4xx（鉴权/参数）重试无意义，直接失败
-                    raise PermissionError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+                    retryable = resp.status_code == 429 or resp.status_code >= 500
+                    # Upstream bodies can echo credentials or scanned input.
+                    last_error = f"HTTP {resp.status_code}"
+                    raise RuntimeError(last_error)
 
                 data = resp.json()
-                self.reported_model = data.get("model") or self.reported_model
-                usage = data.get("usage") or {}
-                self.stats.prompt_tokens += usage.get("prompt_tokens", 0)
-                self.stats.completion_tokens += usage.get("completion_tokens", 0)
+                content = data["choices"][0]["message"]["content"]
+                if not isinstance(content, str) or not content.strip():
+                    raise ValueError("invalid content")
+                reported_model = data.get("model")
+                if isinstance(reported_model, str) and reported_model:
+                    self.reported_model = reported_model
+                    self.stats.reported_model = reported_model
+                usage = data.get("usage")
+                if isinstance(usage, dict):
+                    for name in ("prompt_tokens", "completion_tokens"):
+                        value = usage.get(name, 0)
+                        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                            setattr(self.stats, name, getattr(self.stats, name) + value)
                 self.stats.ok += 1
-                return data["choices"][0]["message"]["content"]
-            except PermissionError:
+                return content
+            except Exception as exc:  # noqa: BLE001 - network/parser failures degrade
                 self.stats.failed += 1
-                self.stats.last_error = "auth/param error"
-                raise
-            except Exception as exc:  # noqa: BLE001 - 网络层异常统一重试
-                last_err = exc
-                self.stats.last_error = f"{type(exc).__name__}"
-                if attempt < self.retries:
-                    time.sleep(0.5 * (2**attempt))  # 指数退避：0.5s, 1s, ...
+                # Never retain arbitrary exception text (URLs, bodies, keys, input).
+                if isinstance(exc, httpx.TimeoutException):
+                    last_error = "timeout"
+                elif isinstance(exc, httpx.RequestError):
+                    last_error = "network error"
+                elif not last_error.startswith("HTTP "):
+                    last_error = "invalid response"
+                self.stats.last_error = last_error
+            finally:
+                self.stats.latencies_ms.append((time.monotonic() - started) * 1000)
+            if not retryable:
+                break
+            if attempt < self.retries:
+                time.sleep(0.5 * (2**attempt))
+            last_error = self.stats.last_error or "request failed"
 
-        self.stats.failed += 1
-        raise RuntimeError(f"语义层调用失败（已重试 {self.retries} 次）：{last_err}")
+        raise RuntimeError(f"语义层调用失败：{last_error}") from None
