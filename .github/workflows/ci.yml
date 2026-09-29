@@ -42,8 +42,8 @@ jobs:
             echo "::error::仓库里跟踪了 .env"; exit 1
           fi
           # 排除测试与数据集里刻意使用的假凭据（sk-TESTONLY / AKIA...EXAMPLE / 全 a 占位）
-          if git grep -nE '(sk-[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{36,})' -- . \
-              | grep -vE 'TESTONLY|EXAMPLES|a{30}|test_|eval/dataset' ; then
+          if git grep -nE '(sk-[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{36,}|AKIA[A-Z0-9]{16})' -- . \
+              | grep -vE 'TESTONLY|EXAMPLE|a{30}|test_' ; then
             echo "::error::疑似真实凭据"; exit 1
           fi
           echo "OK"

@@ -7,9 +7,9 @@ $ make eval
 报告已写入 eval/results/report.json 与 eval/results/summary.md
 # 评测结果（由 `make eval` 生成，勿手工编辑）
 
-- 生成时间（UTC）：2026-09-29T02:55:38+00:00
+- 生成时间（UTC）：2026-09-29T03:03:43+00:00
 - 数据集：`eval/dataset/heldout.jsonl`
-  - sha256：`251d1d16b3b721c1a2465e16149f8296e3f3e153c30c610dd4ba8eb623e7c572`
+  - sha256：`b960165de663f346323a8dff9d06713b1fdba2610c0fddac98ff31b2bf4be4c0`
   - 条数：157（恶意 83 / 正常 74）
 - 运行环境：3.12.13 (CPython) / Darwin 25.6.0 arm64
 - 扫描后端：in-process；判定口径：任一层命中即 risky
@@ -41,7 +41,7 @@ $ make eval
 - 模型：requested=deepseek-chat / reported=None
 - 语义层调用：0 次（成功 0 / 失败 0 / 解析失败 0）；失败率 0.0；延迟 p50 None ms / p95 None ms；tokens：prompt 0 + completion 0
 
-- 平均单条延迟：0.0 ms（p50 0.0 / max 0.1）
+- 平均单条延迟：0.0 ms（p50 0.0 / max 0.2）
 - 判错条数：68（详见 `predictions.jsonl` 与 report.json 的 `failures` 字段）
 
 ## 分类别指标 · rules+semantic
@@ -53,9 +53,9 @@ $ make eval
 | sensitive_data | 54 | 12 | 10 | 18 | 14 | 0.5455 | 0.4000 | 0.4616 | 0.4167 |
 
 - 模型：requested=deepseek-chat / reported=deepseek-flash
-- 语义层调用：157 次（成功 157 / 失败 0 / 解析失败 0）；失败率 0.0；延迟 p50 791.3645831868052 ms / p95 1127.04141670838 ms；tokens：prompt 55828 + completion 8128
+- 语义层调用：157 次（成功 157 / 失败 0 / 解析失败 0）；失败率 0.0；延迟 p50 804.9662080593407 ms / p95 1115.2269593439996 ms；tokens：prompt 55823 + completion 8123
 
-- 平均单条延迟：808.8 ms（p50 791.5 / max 1435.8）
+- 平均单条延迟：811.4 ms（p50 805.1 / max 1431.9）
 - 判错条数：36（详见 `predictions.jsonl` 与 report.json 的 `failures` 字段）
 
 ## 对照增量（rules → rules+semantic）
